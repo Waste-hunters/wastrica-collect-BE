@@ -31,7 +31,6 @@ async function bootstrap() {
     )
     .setVersion('1.0')
     .addBearerAuth()
-    .addServer('/collect/v1', 'Local API prefix')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

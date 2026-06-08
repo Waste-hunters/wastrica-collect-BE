@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { SmsService } from '../notifications/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -16,6 +17,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly smsService: SmsService,
   ) {}
 
   async sendOtp(dto: SendOtpDto) {
@@ -34,9 +36,13 @@ export class AuthService {
       },
     });
 
+    const smsResponse = await this.smsService.sendOtp(dto.phoneNumber, code);
+
     return {
       sent: true,
-      message: 'OTP generated. SMS provider integration can deliver this code.',
+      message: 'OTP sent by SMS.',
+      provider: 'africastalking',
+      providerResponse: smsResponse,
       devOtp:
         this.configService.get('NODE_ENV') === 'production' ? undefined : code,
     };
