@@ -38,6 +38,13 @@ enum LateFeeType {
   PERCENTAGE
 }
 
+enum HouseholdStatus {
+  ACTIVE
+  SUSPENDED
+  RELOCATED
+  DECEASED
+}
+
 model Company {
   id                 String             @id @default(uuid()) @db.Uuid
   name               String
@@ -52,6 +59,8 @@ model Company {
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
   users              User[]
+  households         Household[]
+  routes             Route[]
 
   @@map("companies")
 }
@@ -72,9 +81,79 @@ model User {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
   otpChallenges OtpChallenge[]
+  collectorRoutes Route[] @relation("CollectorRoutes")
+  assignedHouseholds Household[] @relation("CollectorHouseholds")
 
   @@index([companyId, role])
   @@map("users")
+}
+
+model Route {
+  id            String      @id @default(uuid()) @db.Uuid
+  companyId     String      @map("company_id") @db.Uuid
+  company       Company     @relation(fields: [companyId], references: [id])
+  collectorId   String?     @map("collector_id") @db.Uuid
+  collector     User?       @relation("CollectorRoutes", fields: [collectorId], references: [id])
+  name          String
+  sector        String
+  cell          String?
+  description   String?
+  collectionDay Int?        @map("collection_day")
+  isActive      Boolean     @default(true) @map("is_active")
+  households    Household[]
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([companyId, collectorId])
+  @@map("routes")
+}
+
+model Household {
+  id             String              @id @default(uuid()) @db.Uuid
+  companyId      String              @map("company_id") @db.Uuid
+  company        Company             @relation(fields: [companyId], references: [id])
+  collectorId    String?             @map("collector_id") @db.Uuid
+  collector      User?               @relation("CollectorHouseholds", fields: [collectorId], references: [id])
+  routeId        String?             @map("route_id") @db.Uuid
+  route          Route?              @relation(fields: [routeId], references: [id])
+  householdCode  String              @map("household_code")
+  residentName   String              @map("resident_name")
+  phoneNumber    String              @map("phone_number")
+  momoNumber     String?             @map("momo_number")
+  sector         String
+  cell           String
+  village        String?
+  address        String?
+  latitude       Decimal?            @db.Decimal(9, 6)
+  longitude      Decimal?            @db.Decimal(9, 6)
+  monthlyFeeRwf  Int                 @map("monthly_fee_rwf")
+  collectionDay  Int                 @map("collection_day")
+  status         HouseholdStatus     @default(ACTIVE)
+  verifiedAt     DateTime?           @map("verified_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  feeHistory     HouseholdFeeHistory[]
+
+  @@unique([companyId, householdCode])
+  @@index([companyId, status])
+  @@index([collectorId])
+  @@index([routeId])
+  @@map("households")
+}
+
+model HouseholdFeeHistory {
+  id             String    @id @default(uuid()) @db.Uuid
+  householdId    String    @map("household_id") @db.Uuid
+  household      Household @relation(fields: [householdId], references: [id])
+  previousFeeRwf Int?      @map("previous_fee_rwf")
+  newFeeRwf      Int       @map("new_fee_rwf")
+  effectiveFrom  DateTime  @map("effective_from")
+  reason         String?
+  changedById    String?   @map("changed_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([householdId, effectiveFrom])
+  @@map("household_fee_history")
 }
 
 model OtpChallenge {

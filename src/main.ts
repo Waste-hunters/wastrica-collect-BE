@@ -24,6 +24,9 @@ async function bootstrap() {
         '- Auth: OTP challenges and JWT login.',
         '- Companies: company workspace onboarding and settings.',
         '- Users & Roles: staff invitation, role assignment, and activation flow.',
+        '- Collectors: field staff onboarding and performance summary.',
+        '- Households: household registration, verification, status, and fee history.',
+        '- Routes: route creation, household assignment, and collector route maps.',
       ].join('\n'),
     )
     .setVersion('1.0')
