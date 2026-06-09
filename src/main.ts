@@ -27,6 +27,7 @@ async function bootstrap() {
         '- Collectors: field staff onboarding and performance summary.',
         '- Households: household registration, verification, status, and fee history.',
         '- Routes: route creation, household assignment, and collector route maps.',
+        '- Billing: billing periods, charge generation, household balance and payment status.',
       ].join('\n'),
     )
     .setVersion('1.0')

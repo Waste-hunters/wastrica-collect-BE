@@ -45,6 +45,20 @@ enum HouseholdStatus {
   DECEASED
 }
 
+enum BillingPeriodStatus {
+  OPEN
+  ACTIVE
+  CLOSED
+}
+
+enum ChargeStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  WAIVED
+}
+
 model Company {
   id                 String             @id @default(uuid()) @db.Uuid
   name               String
@@ -61,6 +75,7 @@ model Company {
   users              User[]
   households         Household[]
   routes             Route[]
+  billingPeriods     BillingPeriod[]
 
   @@map("companies")
 }
@@ -133,6 +148,7 @@ model Household {
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
   feeHistory     HouseholdFeeHistory[]
+  charges        Charge[]
 
   @@unique([companyId, householdCode])
   @@index([companyId, status])
@@ -168,4 +184,47 @@ model OtpChallenge {
 
   @@index([phoneNumber, expiresAt])
   @@map("otp_challenges")
+}
+
+model BillingPeriod {
+  id                 String              @id @default(uuid()) @db.Uuid
+  companyId          String              @map("company_id") @db.Uuid
+  company            Company             @relation(fields: [companyId], references: [id])
+  year               Int
+  month              Int
+  periodStart        DateTime            @map("period_start") @db.Date
+  periodEnd          DateTime            @map("period_end") @db.Date
+  status             BillingPeriodStatus @default(OPEN)
+  chargesGeneratedAt DateTime?           @map("charges_generated_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  charges Charge[]
+
+  @@unique([companyId, year, month])
+  @@index([companyId, status])
+  @@map("billing_periods")
+}
+
+model Charge {
+  id              String       @id @default(uuid()) @db.Uuid
+  billingPeriodId String       @map("billing_period_id") @db.Uuid
+  billingPeriod   BillingPeriod @relation(fields: [billingPeriodId], references: [id])
+  householdId     String       @map("household_id") @db.Uuid
+  household       Household    @relation(fields: [householdId], references: [id])
+  companyId       String       @map("company_id") @db.Uuid
+  baseFeeRwf      Int          @map("base_fee_rwf")
+  lateFeeRwf      Int          @default(0) @map("late_fee_rwf")
+  totalAmountRwf  Int          @map("total_amount_rwf")
+  amountPaidRwf   Int          @default(0) @map("amount_paid_rwf")
+  status          ChargeStatus @default(PENDING)
+  dueDate         DateTime     @map("due_date") @db.Date
+  paidAt          DateTime?    @map("paid_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@unique([billingPeriodId, householdId])
+  @@index([householdId, status])
+  @@index([companyId, status])
+  @@map("charges")
 }
