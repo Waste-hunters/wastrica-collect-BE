@@ -4,78 +4,74 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-type AfricaTalkingSms = {
-  send(options: {
-    to: string | string[];
-    message: string;
-    senderId?: string;
-    enqueue?: boolean;
-  }): Promise<unknown>;
-};
+import Twilio from 'twilio';
 
 @Injectable()
 export class SmsService {
-  private readonly sms: AfricaTalkingSms;
-  private readonly senderId?: string;
+  private readonly client: Twilio.Twilio | null = null;
+  private readonly verifyServiceSid: string;
 
   constructor(private readonly configService: ConfigService) {
-    const apiKey = this.configService.get<string>('AFRICASTALKING_API_KEY');
-    const username = this.configService.get<string>('AFRICASTALKING_USERNAME');
-    this.senderId = this.configService.get<string>('AFRICASTALKING_SENDER_ID');
+    const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
+    const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+    this.verifyServiceSid =
+      this.configService.get<string>('TWILIO_VERIFY_SERVICE_SID') ?? '';
 
-    if (!apiKey || !username) {
-      return;
+    if (accountSid && authToken && this.verifyServiceSid) {
+      this.client = Twilio(accountSid, authToken);
     }
-
-    // The official Africa's Talking SDK is CommonJS.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const africasTalking = require('africastalking')({
-      apiKey,
-      username,
-    });
-
-    this.sms = africasTalking.SMS;
   }
 
-  async sendOtp(phoneNumber: string, code: string) {
-    if (!this.sms) {
-      throw new InternalServerErrorException(
-        'Africa’s Talking SMS is not configured. Set AFRICASTALKING_API_KEY and AFRICASTALKING_USERNAME.',
-      );
-    }
-
-    const message = `Your Wastrica Collect OTP is ${code}. It expires in 5 minutes.`;
+  async sendVerification(phoneNumber: string) {
+    this.assertConfigured();
 
     try {
-      return await this.sms.send({
-        to: phoneNumber,
-        message,
-        senderId: this.senderId,
-        enqueue: true,
-      });
+      return await this.client!.verify.v2
+        .services(this.verifyServiceSid)
+        .verifications.create({ to: phoneNumber, channel: 'sms' });
     } catch (error) {
       throw new BadGatewayException({
-        message: 'Failed to send OTP SMS through Africa’s Talking',
+        message: 'Failed to send OTP via Twilio Verify',
         providerError: this.formatProviderError(error),
       });
     }
   }
 
+  async checkVerification(phoneNumber: string, code: string): Promise<boolean> {
+    this.assertConfigured();
+
+    try {
+      const result = await this.client!.verify.v2
+        .services(this.verifyServiceSid)
+        .verificationChecks.create({ to: phoneNumber, code });
+
+      return result.status === 'approved';
+    } catch (error) {
+      throw new BadGatewayException({
+        message: 'Failed to verify OTP via Twilio Verify',
+        providerError: this.formatProviderError(error),
+      });
+    }
+  }
+
+  private assertConfigured() {
+    if (!this.client) {
+      throw new InternalServerErrorException(
+        'Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID.',
+      );
+    }
+  }
+
   private formatProviderError(error: unknown) {
     if (error && typeof error === 'object' && 'response' in error) {
-      const response = (error as { response?: { data?: unknown; status?: number } })
-        .response;
+      const response = (
+        error as { response?: { data?: unknown; status?: number } }
+      ).response;
 
-      return {
-        status: response?.status,
-        data: response?.data,
-      };
+      return { status: response?.status, data: response?.data };
     }
 
-    if (error instanceof Error) {
-      return error.message;
-    }
+    if (error instanceof Error) return error.message;
 
     return error;
   }

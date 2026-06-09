@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs';
 import { SmsService } from '../notifications/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SendOtpDto } from './dto/send-otp.dto';
@@ -21,50 +20,22 @@ export class AuthService {
   ) {}
 
   async sendOtp(dto: SendOtpDto) {
-    const code = this.generateOtp();
-    const codeHash = await bcrypt.hash(code, 10);
-    const user = await this.prisma.user.findUnique({
-      where: { phoneNumber: dto.phoneNumber },
-    });
-
-    await this.prisma.otpChallenge.create({
-      data: {
-        phoneNumber: dto.phoneNumber,
-        codeHash,
-        userId: user?.id,
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-
-    const smsResponse = await this.smsService.sendOtp(dto.phoneNumber, code);
+    await this.smsService.sendVerification(dto.phoneNumber);
 
     return {
       sent: true,
-      message: 'OTP sent by SMS.',
-      provider: 'africastalking',
-      providerResponse: smsResponse,
-      devOtp:
-        this.configService.get('NODE_ENV') === 'production' ? undefined : code,
+      message: 'OTP sent via SMS.',
+      provider: 'twilio',
     };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
-    const challenge = await this.prisma.otpChallenge.findFirst({
-      where: {
-        phoneNumber: dto.phoneNumber,
-        consumedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const approved = await this.smsService.checkVerification(
+      dto.phoneNumber,
+      dto.code,
+    );
 
-    if (!challenge) {
-      throw new UnauthorizedException('OTP is invalid or expired');
-    }
-
-    const valid = await bcrypt.compare(dto.code, challenge.codeHash);
-
-    if (!valid) {
+    if (!approved) {
       throw new UnauthorizedException('OTP is invalid or expired');
     }
 
@@ -83,12 +54,6 @@ export class AuthService {
       data: {
         status: 'ACTIVE',
         lastLoginAt: new Date(),
-        otpChallenges: {
-          update: {
-            where: { id: challenge.id },
-            data: { consumedAt: new Date() },
-          },
-        },
       },
     });
 
@@ -108,9 +73,5 @@ export class AuthService {
         companyId: activatedUser.companyId,
       },
     };
-  }
-
-  private generateOtp() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 }

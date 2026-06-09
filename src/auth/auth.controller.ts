@@ -23,7 +23,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Send OTP',
     description:
-      'Creates a 6-digit OTP challenge for a phone number. In production this will be delivered through Africa’s Talking SMS.',
+      'Sends a one-time passcode to the given phone number via Twilio Verify SMS.',
   })
   @ApiBody({ type: SendOtpDto })
   @ApiOkResponse({ type: SendOtpResponseDto })
@@ -35,7 +35,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Verify OTP and receive JWT',
     description:
-      'Verifies the latest active OTP for an invited user and returns a JWT scoped to their role and company.',
+      'Verifies the OTP for an invited user and returns a JWT scoped to their role and company.',
   })
   @ApiBody({ type: VerifyOtpDto })
   @ApiOkResponse({ type: AuthResponseDto })
