@@ -10,6 +10,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../common/guards/roles.guard';
+import { ActivateHouseholdDto } from './dto/activate-household.dto';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { HouseholdResponseDto } from './dto/household-response.dto';
 import { ImportHouseholdsDto } from './dto/import-households.dto';
@@ -111,5 +112,30 @@ export class HouseholdsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.householdsService.updateFee(id, dto, user.sub, user.companyId);
+  }
+
+  @Post('households/:id/activate')
+  @Roles('COMPANY_ADMIN', 'MANAGER', 'HOUSEHOLD')
+  @ApiOperation({
+    summary: 'Activate household account',
+    description:
+      'Verifies the email OTP and sets the household password. ' +
+      'Returns a JWT so the resident is immediately logged in. ' +
+      'Can also be called by COMPANY_ADMIN / MANAGER to activate on behalf of a resident.',
+  })
+  @ApiCreatedResponse({ description: 'Account activated. Returns accessToken + user.' })
+  activate(
+    @Param('id') id: string,
+    @Body() dto: ActivateHouseholdDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.householdsService.activate(id, dto, user.companyId);
+  }
+
+  @Post('households/:id/resend-otp')
+  @Roles('COMPANY_ADMIN', 'MANAGER')
+  @ApiOperation({ summary: 'Re-send email OTP to household' })
+  resendOtp(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.householdsService.resendOtp(id, user.companyId);
   }
 }

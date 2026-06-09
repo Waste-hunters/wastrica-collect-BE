@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
@@ -78,6 +79,14 @@ export class CreateHouseholdDto {
   @IsOptional()
   @IsUUID()
   collectorId?: string;
+
+  @ApiPropertyOptional({
+    example: 'jean.uwimana@gmail.com',
+    description: 'Household email for self-service portal access. An OTP is sent here upon registration.',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @ApiPropertyOptional({ example: 'f93c96d5-ea4e-4f81-a6a8-451a929d4b16' })
   @IsOptional()

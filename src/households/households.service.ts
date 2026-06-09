@@ -2,9 +2,15 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
+import { EmailService } from '../notifications/email.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivateHouseholdDto } from './dto/activate-household.dto';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { ImportHouseholdsDto } from './dto/import-households.dto';
 import { UpdateHouseholdFeeDto } from './dto/update-household-fee.dto';
@@ -13,7 +19,13 @@ import { UpdateHouseholdDto } from './dto/update-household.dto';
 
 @Injectable()
 export class HouseholdsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(HouseholdsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async list(companyId: string, requesterCompanyId?: string | null) {
     this.assertCompanyScope(companyId, requesterCompanyId);
@@ -36,7 +48,7 @@ export class HouseholdsService {
     const householdCode =
       dto.householdCode ?? (await this.generateHouseholdCode(companyId));
 
-    return this.prisma.household.create({
+    const household = await this.prisma.household.create({
       data: {
         companyId,
         householdCode,
@@ -53,8 +65,119 @@ export class HouseholdsService {
         collectionDay: dto.collectionDay,
         collectorId: dto.collectorId,
         routeId: dto.routeId,
+        email: dto.email,
       },
     });
+
+    if (dto.email) {
+      await this.sendEmailOtp(household.id, dto.email, dto.residentName).catch((err) => {
+        this.logger.error(`Failed to send OTP to ${dto.email} for household ${household.id}: ${err?.message}`);
+      });
+    }
+
+    return household;
+  }
+
+  async activate(id: string, dto: ActivateHouseholdDto, requesterCompanyId?: string | null) {
+    const household = await this.findOne(id, requesterCompanyId).catch(() => null)
+      ?? await this.prisma.household.findUnique({ where: { id } });
+
+    if (!household) throw new NotFoundException('Household not found');
+
+    if (!household.email) {
+      throw new BadRequestException('This household has no email registered');
+    }
+    if (household.emailVerifiedAt) {
+      throw new BadRequestException('Household account already activated');
+    }
+
+    // Find the most recent valid, unconsumed OTP challenge for this email
+    const challenge = await this.prisma.emailOtpChallenge.findFirst({
+      where: {
+        email: household.email,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!challenge) {
+      throw new UnauthorizedException('No valid OTP found. Request a new one.');
+    }
+
+    const isValid = await bcrypt.compare(dto.otp, challenge.codeHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid OTP');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    const [user] = await this.prisma.$transaction([
+      this.prisma.user.create({
+        data: {
+          fullName: household.residentName,
+          phoneNumber: household.phoneNumber,
+          email: household.email,
+          role: 'HOUSEHOLD',
+          status: 'ACTIVE',
+          companyId: household.companyId,
+          passwordHash,
+          householdId: household.id,
+        },
+      }),
+      this.prisma.household.update({
+        where: { id: household.id },
+        data: { emailVerifiedAt: new Date() },
+      }),
+      this.prisma.emailOtpChallenge.update({
+        where: { id: challenge.id },
+        data: { consumedAt: new Date() },
+      }),
+    ]);
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      companyId: user.companyId,
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        companyId: user.companyId,
+        householdId: household.id,
+      },
+    };
+  }
+
+  async resendOtp(id: string, requesterCompanyId?: string | null) {
+    const household = await this.findOne(id, requesterCompanyId);
+
+    if (!household.email) {
+      throw new BadRequestException('This household has no email registered');
+    }
+    if (household.emailVerifiedAt) {
+      throw new BadRequestException('Household account is already activated');
+    }
+
+    await this.sendEmailOtp(household.id, household.email, household.residentName);
+    return { sent: true, email: household.email };
+  }
+
+  async sendEmailOtp(_householdId: string, email: string, residentName: string) {
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await this.prisma.emailOtpChallenge.create({
+      data: { email, codeHash, expiresAt },
+    });
+
+    await this.emailService.sendOtp(email, otp, residentName);
   }
 
   async import(companyId: string, dto: ImportHouseholdsDto, requesterCompanyId?: string | null) {

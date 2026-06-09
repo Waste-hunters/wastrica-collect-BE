@@ -11,6 +11,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
 import { AuthResponseDto, SendOtpResponseDto } from './dto/auth-response.dto';
+import { HouseholdLoginDto } from './dto/household-login.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 
@@ -42,6 +43,18 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'OTP is invalid or expired.' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyOtp(dto);
+  }
+
+  @Post('household/login')
+  @ApiOperation({
+    summary: 'Household resident login',
+    description: 'Email + password login for household residents. Returns a JWT scoped to the HOUSEHOLD role.',
+  })
+  @ApiBody({ type: HouseholdLoginDto })
+  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Invalid credentials or account not activated.' })
+  householdLogin(@Body() dto: HouseholdLoginDto) {
+    return this.authService.householdLogin(dto);
   }
 
   @Get('me')
