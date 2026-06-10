@@ -27,7 +27,7 @@ echo "PostgreSQL installed. Version: $(psql --version)"
 echo "=== [5/6] Creating database and user ==="
 # Creates DB user 'wastrica' with password 'wastrica_pass' and a database 'wastrica_collect'
 # CHANGE the password below before running!
-sudo -u postgres psql -c "CREATE USER wastrica WITH PASSWORD 'CHANGE_ME_DB_PASSWORD';" || echo "User may already exist"
+sudo -u postgres psql -c "CREATE USER wastrica WITH PASSWORD 'wastrica_pass';" || echo "User may already exist"
 sudo -u postgres psql -c "CREATE DATABASE wastrica_collect OWNER wastrica;" || echo "DB may already exist"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE wastrica_collect TO wastrica;"
 
