@@ -10,7 +10,7 @@ cd "$APP_DIR"
 git pull origin main
 
 echo "=== [2/5] Installing dependencies ==="
-npm ci --omit=dev
+npm ci
 
 echo "=== [3/5] Generating Prisma client ==="
 npx prisma generate
