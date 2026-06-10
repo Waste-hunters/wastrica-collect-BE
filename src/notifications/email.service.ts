@@ -31,6 +31,34 @@ export class EmailService {
     }
   }
 
+  async sendStaffOtp(to: string, otp: string, staffName: string): Promise<void> {
+    if (!this.transporter) {
+      this.logger.warn(`[DEV] Staff OTP for ${to}: ${otp}`);
+      return;
+    }
+
+    await this.transporter.sendMail({
+      from: this.fromAddress,
+      to,
+      subject: 'Your Wastrica Collect login code',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto">
+          <h2>Hello ${staffName},</h2>
+          <p>Use the code below to sign in to Wastrica Collect:</p>
+          <div style="font-size:32px;font-weight:bold;letter-spacing:8px;text-align:center;
+                      padding:20px;background:#f4f4f4;border-radius:8px;margin:24px 0">
+            ${otp}
+          </div>
+          <p style="color:#888;font-size:13px">This code expires in 10 minutes. Do not share it.</p>
+        </div>`,
+    }).catch((err) => {
+      throw new InternalServerErrorException({
+        message: 'Failed to send login code email',
+        detail: err?.message,
+      });
+    });
+  }
+
   async sendOtp(to: string, otp: string, residentName: string): Promise<void> {
     if (!this.transporter) {
       this.logger.warn(`[DEV] Email OTP for ${to}: ${otp}`);

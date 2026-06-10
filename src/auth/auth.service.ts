@@ -3,52 +3,80 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { SmsService } from '../notifications/sms.service';
+import { EmailService } from '../notifications/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HouseholdLoginDto } from './dto/household-login.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+
+const OTP_TTL_MINUTES = 10;
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-    private readonly smsService: SmsService,
+    private readonly emailService: EmailService,
   ) {}
 
   async sendOtp(dto: SendOtpDto) {
-    await this.smsService.sendVerification(dto.phoneNumber);
+    const user = await this.prisma.user.findFirst({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('No user found with this email address');
+    }
+
+    const otp = this.generateOtp();
+    const codeHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+
+    await this.prisma.emailOtpChallenge.create({
+      data: { email: dto.email, codeHash, expiresAt },
+    });
+
+    await this.emailService.sendStaffOtp(dto.email, otp, user.fullName);
 
     return {
       sent: true,
-      message: 'OTP sent via SMS.',
-      provider: 'twilio',
+      message: 'OTP sent via email.',
+      provider: 'email',
     };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
-    const approved = await this.smsService.checkVerification(
-      dto.phoneNumber,
-      dto.code,
-    );
+    const challenge = await this.prisma.emailOtpChallenge.findFirst({
+      where: {
+        email: dto.email,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    if (!approved) {
+    if (!challenge) {
       throw new UnauthorizedException('OTP is invalid or expired');
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { phoneNumber: dto.phoneNumber },
+    const isMatch = await bcrypt.compare(dto.code, challenge.codeHash);
+    if (!isMatch) {
+      throw new UnauthorizedException('OTP is invalid or expired');
+    }
+
+    await this.prisma.emailOtpChallenge.update({
+      where: { id: challenge.id },
+      data: { consumedAt: new Date() },
+    });
+
+    const user = await this.prisma.user.findFirst({
+      where: { email: dto.email },
     });
 
     if (!user) {
-      throw new BadRequestException(
-        'No invited user exists for this phone number yet',
-      );
+      throw new BadRequestException('No user found for this email');
     }
 
     const activatedUser = await this.prisma.user.update({
@@ -70,6 +98,7 @@ export class AuthService {
       accessToken,
       user: {
         id: activatedUser.id,
+        email: activatedUser.email,
         phoneNumber: activatedUser.phoneNumber,
         role: activatedUser.role,
         companyId: activatedUser.companyId,
@@ -121,5 +150,9 @@ export class AuthService {
         householdId: household.id,
       },
     };
+  }
+
+  private generateOtp(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 }

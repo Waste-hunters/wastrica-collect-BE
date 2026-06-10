@@ -14,16 +14,21 @@ export class CreateRouteDto {
   @ApiProperty({ example: 'Remera Tuesday Route' })
   @IsString()
   @MinLength(2)
-  name: string;
+  name!: string;
 
   @ApiProperty({ example: 'Remera' })
   @IsString()
-  sector: string;
+  sector!: string;
 
   @ApiPropertyOptional({ example: 'Rukiri II' })
   @IsOptional()
   @IsString()
   cell?: string;
+
+  @ApiPropertyOptional({ example: 'Kagugu' })
+  @IsOptional()
+  @IsString()
+  village?: string;
 
   @ApiPropertyOptional({ example: 'Main route for households near KG 17 Ave.' })
   @IsOptional()

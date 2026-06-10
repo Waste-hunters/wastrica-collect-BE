@@ -37,6 +37,7 @@ export class RoutesService {
         name: dto.name,
         sector: dto.sector,
         cell: dto.cell,
+        village: dto.village,
         description: dto.description,
         collectionDay: dto.collectionDay,
         collectorId: dto.collectorId,
@@ -46,22 +47,22 @@ export class RoutesService {
   }
 
   async findOne(id: string, requesterCompanyId?: string | null) {
-    const route = await this.prisma.route.findUnique({
+    const zone = await this.prisma.route.findUnique({
       where: { id },
       include: { collector: true, households: true },
     });
 
-    if (!route) {
-      throw new NotFoundException('Route not found');
+    if (!zone) {
+      throw new NotFoundException('Zone not found');
     }
 
-    this.assertCompanyScope(route.companyId, requesterCompanyId);
-    return route;
+    this.assertCompanyScope(zone.companyId, requesterCompanyId);
+    return zone;
   }
 
   async update(id: string, dto: UpdateRouteDto, requesterCompanyId?: string | null) {
-    const route = await this.findOne(id, requesterCompanyId);
-    await this.validateCollector(route.companyId, dto.collectorId);
+    const zone = await this.findOne(id, requesterCompanyId);
+    await this.validateCollector(zone.companyId, dto.collectorId);
 
     return this.prisma.route.update({
       where: { id },
@@ -69,6 +70,7 @@ export class RoutesService {
         name: dto.name,
         sector: dto.sector,
         cell: dto.cell,
+        village: dto.village,
         description: dto.description,
         collectionDay: dto.collectionDay,
         collectorId: dto.collectorId,
@@ -86,89 +88,66 @@ export class RoutesService {
     });
   }
 
-  async assignHouseholds(
-    routeId: string,
+  async assignAddresses(
+    zoneId: string,
     dto: AssignHouseholdsDto,
     requesterCompanyId?: string | null,
   ) {
-    const route = await this.findOne(routeId, requesterCompanyId);
+    const zone = await this.findOne(zoneId, requesterCompanyId);
 
-    const households = await this.prisma.household.findMany({
+    const addresses = await this.prisma.household.findMany({
       where: { id: { in: dto.householdIds } },
     });
 
-    if (households.length !== dto.householdIds.length) {
-      throw new BadRequestException('One or more households do not exist');
+    if (addresses.length !== dto.householdIds.length) {
+      throw new BadRequestException('One or more addresses do not exist');
     }
 
-    const outsideCompany = households.find(
-      (household) => household.companyId !== route.companyId,
+    const outsideCompany = addresses.find(
+      (address) => address.companyId !== zone.companyId,
     );
 
     if (outsideCompany) {
-      throw new BadRequestException('All households must belong to this company');
+      throw new BadRequestException('All addresses must belong to this company');
     }
 
     await this.prisma.household.updateMany({
       where: { id: { in: dto.householdIds } },
       data: {
-        routeId,
-        collectorId: route.collectorId,
+        routeId: zoneId,
+        collectorId: zone.collectorId,
       },
     });
 
-    return this.findOne(routeId, requesterCompanyId);
+    return this.findOne(zoneId, requesterCompanyId);
   }
 
-  async removeHousehold(
-    routeId: string,
-    householdId: string,
+  async removeAddress(
+    zoneId: string,
+    addressId: string,
     requesterCompanyId?: string | null,
   ) {
-    const route = await this.findOne(routeId, requesterCompanyId);
-    const household = await this.prisma.household.findUnique({
-      where: { id: householdId },
+    const zone = await this.findOne(zoneId, requesterCompanyId);
+    const address = await this.prisma.household.findUnique({
+      where: { id: addressId },
     });
 
-    if (!household || household.companyId !== route.companyId) {
-      throw new NotFoundException('Household not found');
+    if (!address || address.companyId !== zone.companyId) {
+      throw new NotFoundException('Address not found');
     }
 
     return this.prisma.household.update({
-      where: { id: householdId },
+      where: { id: addressId },
       data: { routeId: null },
     });
   }
 
-  async map(routeId: string, requesterCompanyId?: string | null) {
-    const route = await this.findOne(routeId, requesterCompanyId);
-
-    return {
-      routeId: route.id,
-      routeName: route.name,
-      households: route.households.map((household) => this.toMapPin(household)),
-    };
-  }
-
-  async optimized(routeId: string, requesterCompanyId?: string | null) {
-    const map = await this.map(routeId, requesterCompanyId);
-
-    return {
-      ...map,
-      households: [...map.households].sort((a, b) => {
-        const rank = { ACTIVE: 1, RELOCATED: 2, DECEASED: 3, SUSPENDED: 4 };
-        return (rank[a.householdStatus] ?? 9) - (rank[b.householdStatus] ?? 9);
-      }),
-      note: 'Payment-aware optimization will be added after the payments module.',
-    };
-  }
-
-  async collectorRoute(
+  async collectorZone(
     collectorId: string,
     requester: { sub: string; role: string; companyId?: string | null },
   ) {
     if (requester.role === 'COLLECTOR' && requester.sub !== collectorId) {
-      throw new ForbiddenException('Collectors can only access their own route');
+      throw new ForbiddenException('Collectors can only access their own zone');
     }
 
     const collector = await this.prisma.user.findUnique({
@@ -181,7 +160,7 @@ export class RoutesService {
 
     this.assertCompanyScope(collector.companyId, requester.companyId);
 
-    const routes = await this.prisma.route.findMany({
+    const zones = await this.prisma.route.findMany({
       where: { collectorId },
       include: { households: true },
       orderBy: { name: 'asc' },
@@ -189,36 +168,25 @@ export class RoutesService {
 
     return {
       collectorId,
-      routes: routes.map((route) => ({
-        routeId: route.id,
-        routeName: route.name,
-        households: route.households.map((household) => this.toMapPin(household)),
+      zones: zones.map((zone) => ({
+        zoneId: zone.id,
+        zoneName: zone.name,
+        sector: zone.sector,
+        cell: zone.cell,
+        isActive: zone.isActive,
+        addresses: zone.households.map((h) => ({
+          addressId: h.id,
+          addressCode: h.householdCode,
+          residentName: h.residentName,
+          sector: h.sector,
+          cell: h.cell,
+          village: h.village,
+          address: h.address,
+          status: h.status,
+          monthlyFeeRwf: h.monthlyFeeRwf,
+        })),
       })),
     };
-  }
-
-  private toMapPin(household) {
-    return {
-      householdId: household.id,
-      householdCode: household.householdCode,
-      residentName: household.residentName,
-      householdStatus: household.status,
-      paymentStatus: 'UNKNOWN_UNTIL_PAYMENTS_MODULE',
-      pinColor: this.pinColorForHouseholdStatus(household.status),
-      sector: household.sector,
-      cell: household.cell,
-      latitude: household.latitude === null ? null : Number(household.latitude),
-      longitude: household.longitude === null ? null : Number(household.longitude),
-      amountDueRwf: household.monthlyFeeRwf,
-    };
-  }
-
-  private pinColorForHouseholdStatus(status: string) {
-    if (status === 'SUSPENDED') {
-      return 'grey';
-    }
-
-    return 'blue';
   }
 
   private async validateCollector(companyId: string, collectorId?: string) {

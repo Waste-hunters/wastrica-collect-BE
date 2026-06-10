@@ -115,6 +115,7 @@ model Route {
   name          String
   sector        String
   cell          String?
+  village       String?
   description   String?
   collectionDay Int?        @map("collection_day")
   isActive      Boolean     @default(true) @map("is_active")
