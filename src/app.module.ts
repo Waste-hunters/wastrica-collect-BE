@@ -8,6 +8,7 @@ import { BillingModule } from './billing/billing.module';
 import { CollectorsModule } from './collectors/collectors.module';
 import { CompaniesModule } from './companies/companies.module';
 import { HouseholdsModule } from './households/households.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RoutesModule } from './routes/routes.module';
 import { UsersModule } from './users/users.module';
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     HouseholdsModule,
     RoutesModule,
     BillingModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
