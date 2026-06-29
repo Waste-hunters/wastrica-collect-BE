@@ -5,6 +5,7 @@ export type AuthenticatedUser = {
   phoneNumber: string;
   role: string;
   companyId?: string | null;
+  householdId?: string | null;
 };
 
 export const CurrentUser = createParamDecorator(

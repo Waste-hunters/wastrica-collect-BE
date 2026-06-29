@@ -140,6 +140,7 @@ export class HouseholdsService {
       phoneNumber: user.phoneNumber,
       role: user.role,
       companyId: user.companyId,
+      householdId: household.id,
     });
 
     return {
