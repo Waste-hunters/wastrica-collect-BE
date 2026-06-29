@@ -28,6 +28,7 @@ async function bootstrap() {
         '- Households: household registration, verification, status, and fee history.',
         '- Routes: route creation, household assignment, and collector route maps.',
         '- Billing: billing periods, charge generation, household balance and payment status.',
+        '- Payments: cash + MoMo/Airtel payment recording, webhooks, household payment proofs, reversals.',
       ].join('\n'),
     )
     .setVersion('1.0')
