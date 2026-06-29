@@ -59,6 +59,32 @@ enum ChargeStatus {
   WAIVED
 }
 
+enum PaymentMethod {
+  MOMO_MTN
+  MOMO_AIRTEL
+  EKASH
+  CASH
+  OTHER
+}
+
+enum PaymentSource {
+  SYSTEM
+  COLLECTOR
+  HOUSEHOLD_CLAIM
+}
+
+enum PaymentProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MomoCollectionStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+}
+
 model Company {
   id                 String             @id @default(uuid()) @db.Uuid
   name               String
@@ -101,6 +127,7 @@ model User {
   otpChallenges  OtpChallenge[]
   collectorRoutes Route[] @relation("CollectorRoutes")
   assignedHouseholds Household[] @relation("CollectorHouseholds")
+  collectorPayments Payment[] @relation("CollectorPayments")
 
   @@index([companyId, role])
   @@map("users")
@@ -155,6 +182,9 @@ model Household {
   emailVerifiedAt DateTime?           @map("email_verified_at")
   feeHistory     HouseholdFeeHistory[]
   charges        Charge[]
+  payments       Payment[]
+  paymentProofs  PaymentProof[]
+  momoCollections MomoCollection[]
   householdUser  User?               @relation("HouseholdUser")
 
   @@unique([companyId, householdCode])
@@ -241,9 +271,99 @@ model Charge {
   paidAt          DateTime?    @map("paid_at")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
+  payments        Payment[]
+  paymentProofs   PaymentProof[]
+  momoCollections MomoCollection[]
 
   @@unique([billingPeriodId, householdId])
   @@index([householdId, status])
   @@index([companyId, status])
   @@map("charges")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  companyId         String        @map("company_id") @db.Uuid
+  householdId       String        @map("household_id") @db.Uuid
+  household         Household     @relation(fields: [householdId], references: [id])
+  chargeId          String?       @map("charge_id") @db.Uuid
+  charge            Charge?       @relation(fields: [chargeId], references: [id])
+  billingPeriodId   String?       @map("billing_period_id") @db.Uuid
+  collectorId       String?       @map("collector_id") @db.Uuid
+  collector         User?         @relation("CollectorPayments", fields: [collectorId], references: [id])
+  amountRwf         Int           @map("amount_rwf")
+  paymentMethod     PaymentMethod @map("payment_method")
+  momoTransactionId String?       @unique @map("momo_transaction_id")
+  source            PaymentSource @default(COLLECTOR)
+  paidAt            DateTime      @map("paid_at")
+  note              String?
+  recordedById      String?       @map("recorded_by_id") @db.Uuid
+  isReversed        Boolean       @default(false) @map("is_reversed")
+  reversalReason    String?       @map("reversal_reason")
+  reversedById      String?       @map("reversed_by_id") @db.Uuid
+  reversedAt        DateTime?     @map("reversed_at")
+  proof             PaymentProof?
+  momoCollection    MomoCollection?
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  @@index([householdId])
+  @@index([companyId])
+  @@index([chargeId])
+  @@index([collectorId])
+  @@map("payments")
+}
+
+model MomoCollection {
+  id                    String               @id @default(uuid()) @db.Uuid
+  referenceId           String               @unique @map("reference_id") @db.Uuid
+  companyId             String               @map("company_id") @db.Uuid
+  householdId           String               @map("household_id") @db.Uuid
+  household             Household            @relation(fields: [householdId], references: [id])
+  chargeId              String               @map("charge_id") @db.Uuid
+  charge                Charge               @relation(fields: [chargeId], references: [id])
+  billingPeriodId       String?              @map("billing_period_id") @db.Uuid
+  payerPhone            String               @map("payer_phone")
+  amountRwf             Int                  @map("amount_rwf")
+  currency              String               @default("EUR")
+  externalId            String               @map("external_id")
+  status                MomoCollectionStatus @default(PENDING)
+  financialTransactionId String?             @map("financial_transaction_id")
+  failureReason         String?              @map("failure_reason")
+  initiatedById         String?              @map("initiated_by_id") @db.Uuid
+  paymentId             String?              @unique @map("payment_id") @db.Uuid
+  payment               Payment?             @relation(fields: [paymentId], references: [id])
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+
+  @@index([companyId, status])
+  @@index([householdId])
+  @@map("momo_collections")
+}
+
+model PaymentProof {
+  id                String             @id @default(uuid()) @db.Uuid
+  companyId         String             @map("company_id") @db.Uuid
+  householdId       String             @map("household_id") @db.Uuid
+  household         Household          @relation(fields: [householdId], references: [id])
+  billingPeriodId   String?            @map("billing_period_id") @db.Uuid
+  chargeId          String?            @map("charge_id") @db.Uuid
+  charge            Charge?            @relation(fields: [chargeId], references: [id])
+  submittedById     String?            @map("submitted_by_id") @db.Uuid
+  claimedAmountRwf  Int                @map("claimed_amount_rwf")
+  paymentMethod     PaymentMethod      @map("payment_method")
+  momoTransactionId String?            @map("momo_transaction_id")
+  proofImageUrl     String?            @map("proof_image_url")
+  note              String?
+  status            PaymentProofStatus @default(PENDING)
+  reviewedById      String?            @map("reviewed_by_id") @db.Uuid
+  reviewedAt        DateTime?          @map("reviewed_at")
+  rejectionReason   String?            @map("rejection_reason")
+  paymentId         String?            @unique @map("payment_id") @db.Uuid
+  payment           Payment?           @relation(fields: [paymentId], references: [id])
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  @@index([companyId, status])
+  @@index([householdId])
+  @@map("payment_proofs")
 }
