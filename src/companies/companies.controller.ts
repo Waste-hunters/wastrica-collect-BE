@@ -23,6 +23,15 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
+  @Get('public')
+  @ApiOperation({
+    summary: 'List all waste collection companies for public registration',
+  })
+  @ApiOkResponse({ type: CompanyResponseDto, isArray: true })
+  listPublic() {
+    return this.companiesService.listPublic();
+  }
+
   @Post()
   @ApiOperation({
     summary: 'Register a waste collection company',

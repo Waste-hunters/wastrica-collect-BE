@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActivateHouseholdDto } from './dto/activate-household.dto';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { ImportHouseholdsDto } from './dto/import-households.dto';
+import { RegisterHouseholdDto } from './dto/register-household.dto';
 import { UpdateHouseholdFeeDto } from './dto/update-household-fee.dto';
 import { UpdateHouseholdStatusDto } from './dto/update-household-status.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
@@ -319,5 +320,180 @@ export class HouseholdsService {
     if (companyId !== requesterCompanyId) {
       throw new ForbiddenException('Cannot access another company workspace');
     }
+  }
+
+  async register(userId: string, dto: RegisterHouseholdDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+    if (user.householdId) {
+      throw new BadRequestException('User is already linked to a household');
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: dto.companyId },
+    });
+    if (!company) throw new NotFoundException('Company not found');
+
+    const householdCode = await this.generateHouseholdCode(dto.companyId);
+
+    const household = await this.prisma.household.create({
+      data: {
+        companyId: dto.companyId,
+        householdCode,
+        residentName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        momoNumber: dto.momoNumber || user.phoneNumber,
+        sector: dto.sector,
+        cell: dto.cell,
+        village: dto.village,
+        address: dto.address,
+        monthlyFeeRwf: dto.monthlyFeeRwf,
+        collectionDay: dto.collectionDay,
+        status: 'ACTIVE',
+        verifiedAt: null, // initially null
+      },
+    });
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        householdId: household.id,
+        companyId: dto.companyId,
+      },
+    });
+
+    return household;
+  }
+
+  async getMeStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        household: {
+          include: {
+            company: true,
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    return {
+      linked: !!user.householdId,
+      verified: !!user.household?.verifiedAt,
+      household: user.household ? {
+        id: user.household.id,
+        householdCode: user.household.householdCode,
+        residentName: user.household.residentName,
+        phoneNumber: user.household.phoneNumber,
+        momoNumber: user.household.momoNumber,
+        sector: user.household.sector,
+        cell: user.household.cell,
+        village: user.household.village,
+        address: user.household.address,
+        monthlyFeeRwf: user.household.monthlyFeeRwf,
+        collectionDay: user.household.collectionDay,
+        status: user.household.status,
+        verifiedAt: user.household.verifiedAt,
+        companyId: user.household.companyId,
+        companyName: user.household.company.name,
+      } : null,
+    };
+  }
+
+  async simulateActive(id: string) {
+    const household = await this.prisma.household.findUnique({
+      where: { id },
+    });
+    if (!household) throw new NotFoundException('Household not found');
+
+    // Update household to verified
+    const updatedHousehold = await this.prisma.household.update({
+      where: { id },
+      data: {
+        verifiedAt: new Date(),
+        status: 'ACTIVE',
+      },
+    });
+
+    // Create current billing period if it doesn't exist
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // 1-indexed
+
+    let period = await this.prisma.billingPeriod.findUnique({
+      where: {
+        companyId_year_month: {
+          companyId: household.companyId,
+          year,
+          month,
+        },
+      },
+    });
+
+    if (!period) {
+      const periodStart = new Date(Date.UTC(year, month - 1, 1));
+      const periodEnd = new Date(Date.UTC(year, month, 0));
+      period = await this.prisma.billingPeriod.create({
+        data: {
+          companyId: household.companyId,
+          year,
+          month,
+          periodStart,
+          periodEnd,
+          status: 'ACTIVE',
+          chargesGeneratedAt: new Date(),
+        },
+      });
+    } else if (period.status === 'OPEN') {
+      period = await this.prisma.billingPeriod.update({
+        where: { id: period.id },
+        data: { status: 'ACTIVE', chargesGeneratedAt: new Date() },
+      });
+    }
+
+    // Create charge for the household in this period if not exists
+    let charge = await this.prisma.charge.findUnique({
+      where: {
+        billingPeriodId_householdId: {
+          billingPeriodId: period.id,
+          householdId: id,
+        },
+      },
+    });
+
+    let chargeCreated = false;
+    if (!charge) {
+      const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const day = Math.min(household.collectionDay, lastDay);
+      const dueDate = new Date(Date.UTC(year, month - 1, day));
+
+      charge = await this.prisma.charge.create({
+        data: {
+          billingPeriodId: period.id,
+          householdId: id,
+          companyId: household.companyId,
+          baseFeeRwf: household.monthlyFeeRwf,
+          totalAmountRwf: household.monthlyFeeRwf,
+          dueDate,
+          status: 'PENDING',
+        },
+      });
+      chargeCreated = true;
+    }
+
+    return {
+      verified: true,
+      householdId: id,
+      companyId: household.companyId,
+      billingPeriodId: period.id,
+      chargeId: charge.id,
+      chargeCreated,
+    };
   }
 }

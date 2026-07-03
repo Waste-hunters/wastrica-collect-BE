@@ -59,6 +59,13 @@ enum ChargeStatus {
   WAIVED
 }
 
+enum PaymentTransactionStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  EXPIRED
+}
+
 model Company {
   id                 String             @id @default(uuid()) @db.Uuid
   name               String
@@ -242,8 +249,29 @@ model Charge {
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
+  paymentTransactions PaymentTransaction[]
+
   @@unique([billingPeriodId, householdId])
   @@index([householdId, status])
   @@index([companyId, status])
   @@map("charges")
+}
+
+model PaymentTransaction {
+  id            String                    @id @default(uuid()) @db.Uuid
+  chargeId      String                    @map("charge_id") @db.Uuid
+  charge        Charge                    @relation(fields: [chargeId], references: [id])
+  method        String                    @map("method")
+  phoneNumber   String                    @map("phone_number")
+  amountRwf     Int                       @map("amount_rwf")
+  providerRef   String?                   @map("provider_ref")
+  status        PaymentTransactionStatus  @default(PENDING)
+  initiatedAt   DateTime                  @default(now()) @map("initiated_at")
+  completedAt   DateTime?                 @map("completed_at")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+
+  @@index([chargeId])
+  @@index([providerRef])
+  @@map("payment_transactions")
 }
