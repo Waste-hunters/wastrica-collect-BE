@@ -14,6 +14,7 @@ import { ActivateHouseholdDto } from './dto/activate-household.dto';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { HouseholdResponseDto } from './dto/household-response.dto';
 import { ImportHouseholdsDto } from './dto/import-households.dto';
+import { RegisterHouseholdDto } from './dto/register-household.dto';
 import { UpdateHouseholdFeeDto } from './dto/update-household-fee.dto';
 import { UpdateHouseholdStatusDto } from './dto/update-household-status.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
@@ -137,5 +138,31 @@ export class HouseholdsController {
   @ApiOperation({ summary: 'Re-send email OTP to household' })
   resendOtp(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.householdsService.resendOtp(id, user.companyId);
+  }
+
+  @Post('households/register')
+  @Roles('HOUSEHOLD')
+  @ApiOperation({ summary: 'Register household details for logged-in resident' })
+  register(
+    @Body() dto: RegisterHouseholdDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.householdsService.register(user.sub, dto);
+  }
+
+  @Get('households/me/status')
+  @Roles('HOUSEHOLD')
+  @ApiOperation({ summary: 'Get current household linkage and verification status' })
+  getMeStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.householdsService.getMeStatus(user.sub);
+  }
+
+  @Post('households/:id/simulate-active')
+  @Roles('HOUSEHOLD')
+  @ApiOperation({
+    summary: 'Simulation endpoint to verify household and generate a bill/charge'
+  })
+  simulateActive(@Param('id') id: string) {
+    return this.householdsService.simulateActive(id);
   }
 }

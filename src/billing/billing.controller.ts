@@ -118,4 +118,33 @@ export class BillingController {
   ) {
     return this.billingService.getHouseholdPaymentStatus(id, user.companyId);
   }
+
+  @Get('households/me/payments')
+  @Roles('HOUSEHOLD')
+  @ApiTags('Billing — Households')
+  @ApiOperation({ summary: 'Get all payments/charges for the logged-in household resident' })
+  getMePayments(@CurrentUser() user: AuthenticatedUser) {
+    return this.billingService.getHouseholdPayments(user.sub);
+  }
+
+  @Post('households/me/payments/:id/pay')
+  @Roles('HOUSEHOLD')
+  @ApiTags('Billing — Households')
+  @ApiOperation({ summary: 'Submit payment for a household charge' })
+  payMePayment(
+    @Param('id') id: string,
+    @Body() dto: { method: string; phone: string; includeLateFee: boolean },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.billingService.payHouseholdPayment(user.sub, id, dto);
+  }
+
+  @Get('households/me/payments/:id/receipt')
+  @Roles('HOUSEHOLD')
+  @ApiTags('Billing — Households')
+  @ApiOperation({ summary: 'Get receipt details for a paid household charge' })
+  getMeReceipt(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.billingService.getHouseholdReceipt(user.sub, id);
+  }
 }
+
