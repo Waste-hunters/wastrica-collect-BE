@@ -4,12 +4,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { MomoService } from '../momo/momo.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBillingPeriodDto } from './dto/create-billing-period.dto';
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly momoService: MomoService,
+  ) {}
 
   // ─── Billing Periods ──────────────────────────────────────────────────────
 
@@ -298,4 +302,139 @@ export class BillingService {
       createdAt: p.createdAt,
     };
   }
+
+  async getHouseholdPayments(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { householdId: true },
+    });
+
+    if (!user || !user.householdId) {
+      throw new NotFoundException('Household not linked for this user');
+    }
+
+    const charges = await this.prisma.charge.findMany({
+      where: { householdId: user.householdId },
+      include: {
+        billingPeriod: true,
+      },
+      orderBy: {
+        billingPeriod: {
+          periodStart: 'desc',
+        },
+      },
+    });
+
+    const monthNames = [
+      'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december'
+    ];
+
+    return charges.map((charge) => {
+      const monthName = monthNames[(charge.billingPeriod.month - 1) % 12];
+      return {
+        id: charge.id,
+        monthLabelKey: `months.${monthName}`,
+        amount: charge.totalAmountRwf,
+        dueDate: charge.dueDate.toISOString().slice(0, 10),
+        paidDate: charge.paidAt ? charge.paidAt.toISOString().slice(0, 10) : undefined,
+        status: charge.status.toLowerCase() === 'partially_paid' ? 'partial' : charge.status.toLowerCase(),
+        receiptNumber: charge.paidAt ? `WST-${charge.id.slice(0, 8).toUpperCase()}` : undefined,
+        paymentMethod: charge.paidAt ? 'mtn_momo' : undefined,
+      };
+    });
+  }
+
+  async payHouseholdPayment(userId: string, chargeId: string, dto: { method: string; phone: string; includeLateFee: boolean }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { householdId: true },
+    });
+
+    if (!user || !user.householdId) {
+      throw new NotFoundException('Household not linked for this user');
+    }
+
+    const charge = await this.prisma.charge.findUnique({
+      where: { id: chargeId },
+      include: { billingPeriod: true },
+    });
+
+    if (!charge) throw new NotFoundException('Charge not found');
+    if (charge.householdId !== user.householdId) {
+      throw new ForbiddenException('You do not have access to this charge');
+    }
+
+    if (charge.status === 'PAID') {
+      throw new BadRequestException('Charge is already paid');
+    }
+
+    const amountToPay = charge.totalAmountRwf;
+
+    const result = await this.momoService.initiatePayment({
+      chargeId,
+      method: dto.method,
+      phone: dto.phone,
+      amountRwf: amountToPay,
+    });
+
+    return {
+      success: true,
+      status: result.status,
+      transactionId: result.transactionId,
+      message: result.message,
+    };
+  }
+
+  async getHouseholdReceipt(userId: string, chargeId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { householdId: true },
+    });
+
+    if (!user || !user.householdId) {
+      throw new NotFoundException('Household not linked for this user');
+    }
+
+    const charge = await this.prisma.charge.findUnique({
+      where: { id: chargeId },
+      include: {
+        billingPeriod: true,
+        household: {
+          include: {
+            company: true,
+          },
+        },
+      },
+    });
+
+    if (!charge) throw new NotFoundException('Charge not found');
+    if (charge.householdId !== user.householdId) {
+      throw new ForbiddenException('You do not have access to this receipt');
+    }
+
+    if (charge.status !== 'PAID' || !charge.paidAt) {
+      throw new BadRequestException('Charge is not paid yet');
+    }
+
+    const monthNames = [
+      'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december'
+    ];
+    const monthName = monthNames[(charge.billingPeriod.month - 1) % 12];
+
+    return {
+      id: charge.id,
+      receiptNumber: `WST-${charge.id.slice(0, 8).toUpperCase()}`,
+      paidAt: charge.paidAt.toISOString(),
+      amount: charge.amountPaidRwf,
+      residentName: charge.household.residentName,
+      householdCode: charge.household.householdCode,
+      companyName: charge.household.company.name,
+      monthLabelKey: `months.${monthName}`,
+      year: charge.billingPeriod.year,
+      paymentMethod: 'mtn_momo',
+    };
+  }
 }
+
