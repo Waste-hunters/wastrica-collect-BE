@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
 import { AuthResponseDto, SendOtpResponseDto } from './dto/auth-response.dto';
 import { HouseholdLoginDto } from './dto/household-login.dto';
+import { HouseholdSignupDto } from './dto/household-signup.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 
@@ -48,13 +49,24 @@ export class AuthController {
   @Post('household/login')
   @ApiOperation({
     summary: 'Household resident login',
-    description: 'Email + password login for household residents. Returns a JWT scoped to the HOUSEHOLD role.',
+    description: 'Identifier (Email/Phone) + password login for household residents. Returns a JWT scoped to the HOUSEHOLD role.',
   })
   @ApiBody({ type: HouseholdLoginDto })
   @ApiOkResponse({ type: AuthResponseDto })
   @ApiUnauthorizedResponse({ description: 'Invalid credentials or account not activated.' })
   householdLogin(@Body() dto: HouseholdLoginDto) {
     return this.authService.householdLogin(dto);
+  }
+
+  @Post('household/signup')
+  @ApiOperation({
+    summary: 'Household resident self-registration',
+    description: 'Registers a new household user (unlinked to a household initially) and returns a JWT.',
+  })
+  @ApiBody({ type: HouseholdSignupDto })
+  @ApiOkResponse({ type: AuthResponseDto })
+  householdSignup(@Body() dto: HouseholdSignupDto) {
+    return this.authService.householdSignup(dto);
   }
 
   @Get('me')
@@ -65,3 +77,4 @@ export class AuthController {
     return user;
   }
 }
+
