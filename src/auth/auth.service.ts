@@ -8,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { EmailService } from '../notifications/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HouseholdLoginDto } from './dto/household-login.dto';
+import { HouseholdSignupDto } from './dto/household-signup.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 
@@ -107,25 +108,24 @@ export class AuthService {
   }
 
   async householdLogin(dto: HouseholdLoginDto) {
-    const household = await this.prisma.household.findUnique({
-      where: { email: dto.email },
-    });
-
-    if (!household) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
     const user = await this.prisma.user.findFirst({
-      where: { householdId: household.id, role: 'HOUSEHOLD' },
+      where: {
+        role: 'HOUSEHOLD',
+        OR: [
+          { email: dto.identifier },
+          { phoneNumber: dto.identifier },
+        ],
+      },
+      include: { household: true },
     });
 
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException('Account not activated yet');
+      throw new UnauthorizedException('Invalid credentials or account not active');
     }
 
     const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isMatch) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials or account not active');
     }
 
     await this.prisma.user.update({
@@ -145,9 +145,57 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        phoneNumber: user.phoneNumber,
         role: user.role,
         companyId: user.companyId,
-        householdId: household.id,
+        householdId: user.householdId,
+      },
+    };
+  }
+
+  async householdSignup(dto: HouseholdSignupDto) {
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { phoneNumber: dto.phoneNumber },
+          ...(dto.email ? [{ email: dto.email }] : []),
+        ],
+      },
+    });
+
+    if (existingUser) {
+      throw new BadRequestException('A user with this phone number or email already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    const user = await this.prisma.user.create({
+      data: {
+        fullName: dto.fullName,
+        phoneNumber: dto.phoneNumber,
+        email: dto.email || null,
+        role: 'HOUSEHOLD',
+        status: 'ACTIVE',
+        passwordHash,
+      },
+    });
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      companyId: null,
+    });
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        companyId: null,
+        householdId: null,
       },
     };
   }
@@ -156,3 +204,4 @@ export class AuthService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 }
+

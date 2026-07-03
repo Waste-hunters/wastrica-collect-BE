@@ -47,6 +47,22 @@ export class CompaniesService {
     });
   }
 
+  async listPublic() {
+    return this.prisma.company.findMany({
+      select: {
+        id: true,
+        name: true,
+        ruraLicenseNumber: true,
+        contactPhone: true,
+        contactEmail: true,
+        lateFeeGraceDays: true,
+        lateFeeType: true,
+        lateFeeAmountRwf: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async findOne(id: string, requesterCompanyId?: string | null) {
     this.assertCompanyScope(id, requesterCompanyId);
 
